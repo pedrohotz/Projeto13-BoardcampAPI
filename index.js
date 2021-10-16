@@ -48,19 +48,24 @@ app.post('/categories',async (req,res) => {
 
 
 app.get('/games',async (req,res)=>{
+    const { name } = req.query;
     try{
-        const game = req.query.name;
-        const result = await connection.query('SELECT games.*,categories.name AS "categoryName" FROM games JOIN categories ON games."categoryId" = categories.id;');
-        res.status(200).send(result.rows);
+        if (name){
+            const  result = await connection.query(`SELECT * FROM games WHERE name ILIKE $1`, [`${name}%`])
+            res.status(200).send(result.rows);
+          }
+        else{
+            const result = await connection.query('SELECT games.*,categories.name AS "categoryName" FROM games JOIN categories ON games."categoryId" = categories.id;');
+            res.status(200).send(result.rows);
+        }
     }
     catch{
         res.status(500);
     }
 })
 
-app.post('/games',async (req,res) =>{
+app.post('/games',async (req,res) =>{ 
     const game = req.body;
-    console.log(game);
     const gameSchemma = joi.object({
         name: joi.string().alphanum().min(3).max(30).required(),
         image: joi.string().required(),
@@ -89,6 +94,10 @@ app.post('/games',async (req,res) =>{
     catch{
         res.status(201);
     }
+})
+
+app.get('/customers',async (req,res)=>{
+
 })
 
 app.listen(4000);

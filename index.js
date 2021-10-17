@@ -97,7 +97,95 @@ app.post('/games',async (req,res) =>{
 })
 
 app.get('/customers',async (req,res)=>{
+    const { cpf } = req.query;
+    try{
+        if(cpf){
+            const  result = await connection.query(`SELECT * FROM customers WHERE cpf ILIKE $1`, [`${cpf}%`])
+            res.status(200).send(result.rows);
+        }
+        else{
+            const result = await connection.query('SELECT * FROM customers;');
+            res.status(200).send(result.rows);
+        }
+    }
+    catch{
+        res.status(201);
+    }
+})
+
+app.get('/customers/:id',async (req,res) => {
+    const { id } = req.params;
+    try{
+        const result = await connection.query('SELECT * FROM customers WHERE id = $1',[id]);
+        if (result.rowCount === 0){
+            res.status(404).send("Cliente Inexistente");
+            return;
+        }
+        res.status(200).send(result.rows[0]);
+    }
+    catch{
+        res.sendStatus(400);
+    }
+})
+app.put('/customers/:id',async(req,res)=>{
+    const customer = req.body;
+    const { id } = req.params;
+    const customerSchema = joi.object({
+        name: joi.string().required(),
+        phone: joi.string().pattern(/^[0-9]*$/).required(),
+        cpf: joi.string().pattern(/^[0-9]*$/).length(11).required(),
+        birthday: joi.date().greater('1-1-1900').required()
+    })
+    try{
+        const value = await customerSchema.validate(customer);
+        if(value.error){
+            res.status(400).send("Campos inválidos")
+            return;
+        }
+        const customers = await connection.query('SELECT * FROM customers;');
+        if(customers.rows.some(cliente => cliente.cpf === customer.cpf)){
+            res.status(409).send("Cliente ja cadastrado");
+            return;
+        }
+        await connection.query('UPDATE customers SET name = $1, phone = $2, cpf = $3, birthday = $4 WHERE id = $5', [customer.name, customer.phone, customer.cpf, customer.birthday, id]);
+        res.status(200).send("Cliente Atualizado")
+    }
+    catch{
+        res.sendStatus(400);
+    }
 
 })
+
+app.post('/customers',async(req,res) =>{
+    const customer = req.body;
+    const customerSchema = joi.object({
+        name: joi.string().required(),
+        phone: joi.string().pattern(/^[0-9]*$/).required(),
+        cpf: joi.string().pattern(/^[0-9]*$/).length(11).required(),
+        birthday: joi.date().greater('1-1-1900').required()
+    })
+
+    try{
+        const value = await customerSchema.validate(customer);
+        if(value.error){
+            res.status(400).send("Campos inválidos")
+            return;
+        }
+        const customers = await connection.query('SELECT * FROM customers;')
+        if(customers.rows.some(cliente => cliente.cpf === customer.cpf)){
+            res.status(409).send("Cliente ja cadastrado");
+            return;
+        }
+        else{
+            await connection.query(`INSERT INTO customers (name,phone,cpf,birthday) VALUES ($1,$2,$3,$4);`,[customer.name,customer.phone,customer.cpf,customer.birthday]);
+            res.send("Cliente cadastrado com sucessso");
+            res.status(200);
+        }
+    }
+    catch{
+        res.status(201);
+    }
+})
+
 
 app.listen(4000);

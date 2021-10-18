@@ -68,7 +68,7 @@ app.post('/games',async (req,res) =>{
     const game = req.body;
     const gameSchemma = joi.object({
         name: joi.string().alphanum().min(3).max(30).required(),
-        image: joi.string().required(),
+        image: joi.string().pattern(/(http(s?):)([/|.|\w|\s|-])*.(?:jpg|gif|png)/).required(),
         stockTotal: joi.number().integer().min(1).required(),
         categoryId: joi.number().integer().min(1).required(),
         pricePerDay: joi.number().min(1).required(),
@@ -76,6 +76,7 @@ app.post('/games',async (req,res) =>{
     try{
       const value = await gameSchemma.validate(game)
       if (value.error){
+          console.log(value.error);
           res.status(400).send("Campos inválidos")
           return;
       }
@@ -187,5 +188,137 @@ app.post('/customers',async(req,res) =>{
     }
 })
 
+app.get('/rentals', async(req,res)=>{
+    const {customerId, gameId} = req.query;
+    try{
+        const rentals = await connection.query('SELECT rentals.*,customers.id AS "customerId",customers.name AS "customerName",games.id AS "gameId",games.name AS "gameName",games."categoryId" AS "gamesCategoryId",categories.name AS "categoryName" FROM rentals JOIN customers ON rentals."customerId" = customers.id JOIN games ON rentals."gameId" = games.id JOIN categories ON games."categoryId" = categories.id');
+        if(gameId !== undefined){
+            const filteredByGame = await connection.query(`SELECT rentals.*,customers.id AS "customerId",customers.name AS "customerName",games.id AS "gameId",games.name AS "gameName",games."categoryId" AS "gamesCategoryId",categories.name AS "categoryName" FROM rentals JOIN customers ON rentals."customerId" = customers.id JOIN games ON rentals."gameId" = games.id JOIN categories ON games."categoryId" = categories.id WHERE "gameId" = $1`,[gameId]);
+            if(filteredByGame.rowCount === 0){
+                res.sendStatus(404);         
+                return;   
+            }
+            else{
+                res.status(200).send(filteredByGame.rows);
+                return;
+            }
+        }
+        if(customerId !== undefined){
+            const filteredByCustomer = await connection.query(`SELECT rentals.*,customers.id AS "customerId",customers.name AS "customerName",games.id AS "gameId",games.name AS "gameName",games."categoryId" AS "gamesCategoryId",categories.name AS "categoryName" FROM rentals JOIN customers ON rentals."customerId" = customers.id JOIN games ON rentals."gameId" = games.id JOIN categories ON games."categoryId" = categories.id WHERE "customerId" = $1`,[customerId])
+            if(filteredByCustomer.rowCount === 0){
+                res.sendStatus(404);         
+                return;   
+            }
+            else{
+                res.status(200).send(filteredByCustomer.rows);
+                return;
+            }
+        }
+        else{
+            res.status(200).send(rentals.rows);
+        }
+    }
+    catch{
+        res.sendStatus(500);
+    }
+})
+
+app.post('/rentals', async (req,res)=>{
+    const rental = req.body;
+    const rentalSchema = joi.object({
+        customerId: joi.number().min(1).required(),
+        gameId: joi.number().min(1).required(),
+        daysRented:joi.number().min(1).required(),
+    })
+    
+    try{
+        const value = await rentalSchema.validate(rental);
+        if(value.error){
+            res.status(400).send("Campos inválidos")
+            return;
+        }
+        const existGame = await connection.query('SELECT * FROM games WHERE id = $1',[rental.gameId]);
+        if(existGame.rowCount === 0){
+            res.sendStatus(400)
+            return;
+        }
+        const availableGame = await connection.query('SELECT * FROM rentals WHERE "gameId" = $1',[rental.gameId])
+        if(availableGame.rowCount >= existGame.rows[0].stockTotal){
+            res.sendStatus(400);
+            return;
+        }
+        const existCustomer = await connection.query('SELECT * FROM customers WHERE id = $1',[rental.customerId]);
+        if(existCustomer.rowCount === 0){
+            res.sendStatus(400);
+            return;
+        }
+        const rentalBody = {
+            customerId: rental.customerId,
+            gameId: rental.gameId,
+            rentDate: new Date().toLocaleDateString('en-CA'),
+            daysRented: rental.daysRented,
+            returnDate: null,
+            originalPrice: (existGame.rows[0].pricePerDay * rental.daysRented),
+            delayFee:null,
+        }
+
+        await connection.query('INSERT INTO rentals ("customerId", "gameId", "rentDate", "daysRented", "returnDate", "originalPrice", "delayFee") VALUES ($1, $2, $3, $4, $5, $6, $7)',[rentalBody.customerId,rentalBody.gameId,rentalBody.rentDate,rentalBody.daysRented,rentalBody.returnDate,rentalBody.originalPrice,rentalBody.delayFee])
+        res.sendStatus(201);
+    }
+    catch{
+        res.sendStatus(500);
+    }
+})
+
+
+app.post('/rentals/:id/return',async(req,res)=>{
+    const { id } = req.params;
+    const returnDate = new Date();
+    try{
+        const existRental = await connection.query('SELECT * FROM rentals WHERE id = $1',[id]);
+        if(existRental.rowCount === 0){
+            res.sendStatus(404);
+            return;
+        }
+        if(existRental.rows[0].returnDate !== null){
+            res.sendStatus(400);
+            return;
+        }
+        const game = await connection.query('SELECT * FROM games WHERE id= $1',[existRental.rows[0].gameId]);
+        const returnInDays = (new Date(existRental.rows[0].rentDate).getTime()/(1000*60*60*24));
+        const returnInDate = (new Date((returnInDays + existRental.rows[0].daysRented)*(1000*60*60*24)));
+        
+        const daysDifference = Math.floor(((returnDate.getTime()- returnInDate.getTime()) /(1000*60*60*24)));
+        const delayFee = daysDifference * game.rows[0].pricePerDay;
+
+        await connection.query('UPDATE rentals SET "returnDate" = $2, "delayFee" = $3 WHERE id = $1',[id,returnDate.toLocaleDateString('en-Ca'),delayFee <= 0 ? 0 : delayFee]);
+        res.sendStatus(200);
+    }
+    catch(error){
+        console.log(error);
+        res.sendStatus(500);
+    }
+})
+
+app.delete('/rentals/:id',async(req,res) =>{
+    const {id} = req.params;
+    try{
+        const existRental = await connection.query('SELECT * FROM rentals WHERE id = $1',[id]);
+        if(existRental.rowCount === 0){
+            res.sendStatus(404);
+            return;
+        }
+        if(existRental.rows[0].returnDate !== null){
+            res.sendStatus(400);
+            return;
+        }
+        await connection.query('DELETE FROM rentals WHERE id = $1',[id]);
+        res.sendStatus(200);
+    }
+    catch(error){
+        console.log(error);
+        res.sendStatus(500);
+    }
+})
 
 app.listen(4000);

@@ -11,6 +11,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "dayjs": "^1.10.7",
     "joi": "^17.4.2",
     "pg": "^8.7.1"
   }

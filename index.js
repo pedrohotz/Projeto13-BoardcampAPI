@@ -13,21 +13,26 @@ const connection = new Pool({
     database: 'boardcamp'});
 
 app.get('/categories', async (req,res) => {
-       
+        try{
             const result = await connection.query(`SELECT * FROM "categories";`);
             res.status(200).send(result.rows);
- 
 
-            res.status(500);
-
+        }    
+        catch{
+            res.sendStatus(500);
+        }
     }) 
-
 
 app.post('/categories',async (req,res) => {
     try{
         const { name } = req.body;
-        if(!name || name === " "){
-            res.status(400).send("Impossível enviar com campo vazio");
+        const nameSchema = joi.object({
+            name: joi.string().min(1).required()
+        })
+
+        const value = nameSchema.validate({name:name})
+        if(value.error){
+            res.sendStatus(409);
             return;
         }
         const categories = await connection.query('SELECT * FROM "categories";');
@@ -37,12 +42,11 @@ app.post('/categories',async (req,res) => {
         }
         else{
             await connection.query(`INSERT INTO "categories" (name) VALUES ($1);`,[name]);
-            res.send("Categoria criada com sucesso");
-            res.status(200);
+            res.sendStatus(201);
         }
     }
     catch{
-        res.status(201);
+        res.sendStatus(500);
     }
 })
 
@@ -60,7 +64,7 @@ app.get('/games',async (req,res)=>{
         }
     }
     catch{
-        res.status(500);
+        res.sendStatus(500);
     }
 })
 
@@ -77,23 +81,23 @@ app.post('/games',async (req,res) =>{
       const value = await gameSchemma.validate(game)
       if (value.error){
           console.log(value.error);
-          res.status(400).send("Campos inválidos")
+          res.sendStatus(400);
           return;
       }
       const jogos = await connection.query('SELECT * FROM "games";');
       if(jogos.rows.some(jogo => jogo.name === game.name)){
-          res.status(409).send("Jogo já existente");
+          res.sendStatus(409);
           return;
       }
       else{
         await connection.query(`INSERT INTO games (name,image,"stockTotal","categoryId","pricePerDay") VALUES ($1,$2,$3,$4,$5);`,[game.name,game.image,game.stockTotal,game.categoryId,game.pricePerDay]);
         res.send("Jogo criado com sucesso");
-        res.status(200);
+        res.sendStatus(201);
       }
       
     }
     catch{
-        res.status(201);
+        res.status(500);
     }
 })
 
@@ -110,7 +114,7 @@ app.get('/customers',async (req,res)=>{
         }
     }
     catch{
-        res.status(201);
+        res.status(500);
     }
 })
 
@@ -119,13 +123,13 @@ app.get('/customers/:id',async (req,res) => {
     try{
         const result = await connection.query('SELECT * FROM customers WHERE id = $1',[id]);
         if (result.rowCount === 0){
-            res.status(404).send("Cliente Inexistente");
+            res.sendStatus(404);
             return;
         }
         res.status(200).send(result.rows[0]);
     }
     catch{
-        res.sendStatus(400);
+        res.sendStatus(500);
     }
 })
 app.put('/customers/:id',async(req,res)=>{
@@ -140,19 +144,19 @@ app.put('/customers/:id',async(req,res)=>{
     try{
         const value = await customerSchema.validate(customer);
         if(value.error){
-            res.status(400).send("Campos inválidos")
+            res.sendStatus(400);
             return;
         }
         const customers = await connection.query('SELECT * FROM customers;');
         if(customers.rows.some(cliente => cliente.cpf === customer.cpf)){
-            res.status(409).send("Cliente ja cadastrado");
+            res.sendStatus(409);
             return;
         }
         await connection.query('UPDATE customers SET name = $1, phone = $2, cpf = $3, birthday = $4 WHERE id = $5', [customer.name, customer.phone, customer.cpf, customer.birthday, id]);
-        res.status(200).send("Cliente Atualizado")
+        res.sendStatus(200);
     }
     catch{
-        res.sendStatus(400);
+        res.sendStatus(500);
     }
 
 })
@@ -169,22 +173,21 @@ app.post('/customers',async(req,res) =>{
     try{
         const value = await customerSchema.validate(customer);
         if(value.error){
-            res.status(400).send("Campos inválidos")
+            res.sendStatus(400);
             return;
         }
         const customers = await connection.query('SELECT * FROM customers;')
         if(customers.rows.some(cliente => cliente.cpf === customer.cpf)){
-            res.status(409).send("Cliente ja cadastrado");
+            res.sendStatus(409);
             return;
         }
         else{
             await connection.query(`INSERT INTO customers (name,phone,cpf,birthday) VALUES ($1,$2,$3,$4);`,[customer.name,customer.phone,customer.cpf,customer.birthday]);
-            res.send("Cliente cadastrado com sucessso");
-            res.status(200);
+            res.sendStatus(201);
         }
     }
     catch{
-        res.status(201);
+        res.status(500);
     }
 })
 
